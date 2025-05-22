@@ -1,5 +1,6 @@
 import streamlit as st 
 import plotly.express as px 
+import plotly.graph_objects as go
 import pandas as pd 
 import os 
 import warnings 
@@ -20,7 +21,7 @@ if fl is not None:
     else:
         df = pd.read_excel(fl)
 else:
-    os.chdir(r"C:\Desktop\dashboard")
+    os.chdir("C:/Users/punye/OneDrive/Desktop/DA assignements/Python-Dashboard")
     df = pd.read_csv("superstore.csv", encoding="utf-8-sig")
 
 # Parse Order Date as datetime
@@ -81,6 +82,7 @@ else:
 
 # Group by Category
 category_df = filtered_df.groupby(by=["Category"], as_index=False)["Sales"].sum()
+chart_type = st.selectbox("Select Chart Type", ["Bar", "Line", "Pie"])
 
 with col1: 
     st.subheader("Category wise sales") 
@@ -116,17 +118,80 @@ with cl2:
                         help='Click here to download the data as a CSV file')
         
 # Here, use datetime column "Order Date" to get month_year period
-filtered_df["month_year"] = filtered_df["Order Date"].dt.to_period("M")
-st.subheader('Time Series Analysis')
+metric = st.selectbox(
+    "Select Metric to Analyze Over Time",
+    options=["Sales", "Profit", "Quantity"],
+    index=0
+)
 
-linechart = filtered_df.groupby(filtered_df["month_year"].dt.strftime("%Y : %b"))["Sales"].sum().reset_index(name="Sales")
-fig2 = px.line(linechart, x="month_year", y="Sales", labels={"Sales": "Amount"}, height=500, width=1000, template="gridon")
+# Prepare time series data based on selected metric
+filtered_df["month_year"] = filtered_df["Order Date"].dt.to_period("M")
+
+linechart = filtered_df.groupby(
+    filtered_df["month_year"].dt.strftime("%Y : %b")
+)[metric].sum().reset_index(name=metric)
+
+st.subheader(f'Time Series Analysis: {metric}')
+
+# Create line chart with dynamic metric on y-axis
+fig2 = px.line(
+    linechart,
+    x="month_year",
+    y=metric,
+    labels={metric: "Amount"},
+    height=500,
+    width=1000,
+    template="gridon"
+)
+
 st.plotly_chart(fig2, use_container_width=True)
 
-with st.expander("View Data of TimeSeries:"):
+# Optional: Show data and allow download
+with st.expander(f"View Data of {metric} TimeSeries:"):
     st.dataframe(linechart.T)
     csv = linechart.to_csv(index=False).encode("utf-8")
-    st.download_button('Download Data', data=csv, file_name="TimeSeries.csv", mime='text/csv')
+    st.download_button(
+        'Download Data',
+        data=csv,
+        file_name=f"TimeSeries_{metric}.csv",
+        mime='text/csv'
+    )
+
+st.subheader("📊 Interactive Time Series Heatmap")
+
+# Reuse pivot data
+# Prepare pivot table for heatmap
+filtered_df["Year"] = filtered_df["Order Date"].dt.year
+filtered_df["Month"] = filtered_df["Order Date"].dt.strftime('%b')
+
+# Ensure correct month order
+month_order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+filtered_df["Month"] = pd.Categorical(filtered_df["Month"], categories=month_order, ordered=True)
+
+pivot = pd.pivot_table(filtered_df,
+                       values='Sales',
+                       index='Month',
+                       columns='Year',
+                       aggfunc='sum',
+                       fill_value=0)
+
+heatmap_fig = go.Figure(data=go.Heatmap(
+    z=pivot.values,
+    x=[str(col) for col in pivot.columns],
+    y=pivot.index.tolist(),
+    colorscale='YlOrRd',
+    hoverongaps=False
+))
+
+heatmap_fig.update_layout(
+    title="Monthly Sales Heatmap",
+    xaxis_title="Year",
+    yaxis_title="Month",
+    height=500
+)
+
+st.plotly_chart(heatmap_fig, use_container_width=True)
 
 # TreeMap
 st.subheader("Hierarchical view of Sales using TreeMap")
